@@ -1,0 +1,125 @@
+import React from 'react'
+import { PROVIDERS } from '../lib/api.js'
+import { requestNotificationPermission } from '../lib/notifications.js'
+
+const BOOKS  = [{ key:'draftkings',label:'DraftKings'},{ key:'fanduel',label:'FanDuel'},{ key:'betmgm',label:'BetMGM'},{ key:'caesars',label:'Caesars'},{ key:'betrivers',label:'BetRivers'}]
+const SPORTS = [{ key:'nba',label:'NBA'},{ key:'nfl',label:'NFL'},{ key:'mlb',label:'MLB'},{ key:'nhl',label:'NHL'},{ key:'ncaab',label:'NCAAB'},{ key:'ncaaf',label:'NCAAF'},{ key:'mma',label:'MMA'}]
+
+function Chips({ options, selected, onChange }) {
+  return (
+    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+      {options.map(o => {
+        const on = selected.includes(o.key)
+        return (
+          <button key={o.key}
+            onClick={() => onChange(on ? selected.filter(k => k !== o.key) : [...selected, o.key])}
+            style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, cursor: 'pointer',
+              border: `1px solid ${on ? 'var(--border-bright)' : 'var(--border)'}`,
+              background: on ? 'var(--bg-elevated)' : 'transparent',
+              color: on ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: on ? 500 : 400 }}>
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function Slider({ label, hint, min, max, step, value, onChange, fmt }) {
+  return (
+    <div style={{ marginBottom: 20 }}>
+      <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6, fontWeight: 500 }}>{label}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <input type="range" min={min} max={max} step={step} value={value}
+          onChange={e => onChange(parseFloat(e.target.value))}
+          style={{ flex: 1, accentColor: 'var(--green)' }} />
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 500, minWidth: 50, textAlign: 'right' }}>
+          {fmt ? fmt(value) : value}
+        </span>
+      </div>
+      {hint && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.5 }}>{hint}</div>}
+    </div>
+  )
+}
+
+function Box({ title, children }) {
+  return (
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', marginBottom: 14 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 16 }}>{title}</div>
+      {children}
+    </div>
+  )
+}
+
+export function SettingsPanel({ config, onChange }) {
+  async function handleNotif(e) {
+    if (e.target.checked) {
+      const ok = await requestNotificationPermission()
+      onChange({ notifEnabled: ok })
+      if (!ok) alert('Permission denied — enable notifications in your browser settings.')
+    } else {
+      onChange({ notifEnabled: false })
+    }
+  }
+
+  return (
+    <div style={{ maxWidth: 640 }}>
+      <Box title="API connection">
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6, fontWeight: 500 }}>Data provider</label>
+          <select value={config.provider} onChange={e => onChange({ provider: e.target.value })} style={{ width: '100%' }}>
+            <option value={PROVIDERS.RUNDOWN}>The Rundown (recommended — WebSocket, sub-second)</option>
+            <option value={PROVIDERS.ODDS_API}>The Odds API (REST, 30s polling)</option>
+          </select>
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)', marginBottom: 6, fontWeight: 500 }}>API key</label>
+          <input type="password" placeholder="Paste your API key here" value={config.apiKey}
+            onChange={e => onChange({ apiKey: e.target.value })} style={{ width: '100%', fontFamily: 'var(--font-mono)' }} />
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 5, lineHeight: 1.5 }}>
+            {config.provider === PROVIDERS.RUNDOWN
+              ? 'therundown.io/api — Standard for REST, Ultra for WebSocket'
+              : 'the-odds-api.com — Business tier needed for Pinnacle access'}
+          </div>
+        </div>
+      </Box>
+
+      <Box title="Alert thresholds">
+        <Slider label="Edge threshold — all line types" min={0.5} max={6} step={0.5} value={config.edgeThreshold}
+          onChange={v => onChange({ edgeThreshold: v })} fmt={v => `${v.toFixed(1)} pts`}
+          hint="Fires when the soft book opener differs from Pinnacle's opener by this many points" />
+        <Slider label="Vig discrepancy — spreads only" min={5} max={60} step={5} value={config.vigThreshold}
+          onChange={v => onChange({ vigThreshold: v })} fmt={v => `${v}¢`}
+          hint="Fires when the spread juice is this many cents overpriced vs Pinnacle" />
+        <Slider label="Scan interval (REST only)" min={15} max={120} step={5} value={config.scanInterval}
+          onChange={v => onChange({ scanInterval: v })} fmt={v => `${v}s`}
+          hint="WebSocket users get instant push — this setting is ignored" />
+      </Box>
+
+      <Box title="Books to compare against Pinnacle">
+        <Chips options={BOOKS} selected={config.activeSoftBooks} onChange={v => onChange({ activeSoftBooks: v })} />
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10, lineHeight: 1.6 }}>
+          Each book is compared independently against Pinnacle. DraftKings and FanDuel both faulty = two separate alerts.
+        </div>
+      </Box>
+
+      <Box title="Sports">
+        <Chips options={SPORTS} selected={config.activeSports} onChange={v => onChange({ activeSports: v })} />
+      </Box>
+
+      <Box title="Notifications">
+        {[
+          { key: 'soundEnabled', label: 'Sound alert on new sharp opener', handler: null },
+          { key: 'notifEnabled', label: 'Browser push notifications',      handler: handleNotif },
+        ].map(opt => (
+          <label key={opt.key} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, cursor: 'pointer' }}>
+            <input type="checkbox" checked={!!config[opt.key]}
+              onChange={opt.handler || (e => onChange({ [opt.key]: e.target.checked }))}
+              style={{ accentColor: 'var(--green)', width: 15, height: 15 }} />
+            <span style={{ fontSize: 13 }}>{opt.label}</span>
+          </label>
+        ))}
+      </Box>
+    </div>
+  )
+}
